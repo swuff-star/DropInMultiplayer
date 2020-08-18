@@ -72,8 +72,7 @@ namespace DropInMultiplayer
             new List<string> { "EquipmentDroneBody", "EquipmentDrone", "EquipDrone"},
             new List<string> { "EmergencyDroneBody", "EmergencyDrone", "EmDrone"},
             new List<string> { "Turret1Body", "GunnerTurret"},
-            //everything else
-            new List<string> { "AltarSkeletonBody", "AltarSkeleton"},
+            //wisps
             new List<string> { "AncientWispBody", "AncientWisp"},
             new List<string> { "ArchWispBody", "ArchWisp"},
             new List<string> { "GravekeeperBody", "Gravekeeper"},
@@ -130,6 +129,7 @@ namespace DropInMultiplayer
             //npcs
             new List<string> { "SquidTurretBody", "SquidTurret"},
             new List<string> { "ShopkeeperBody", "Shopkeeper"},
+            new List<string> { "AltarSkeletonBody", "AltarSkeleton"},
             //Spectators
             new List<string> { "SpectatorBody", "Spectator"},
             new List<string> { "SpectatorSlowBody", "SpectatorSlow"},
@@ -146,7 +146,7 @@ namespace DropInMultiplayer
             new List<string> { "ScavLunar4Body", "Guragura", "Lucky"},
             //thing 2
             new List<string> { "NullifierBody", "VoidReaver", "Reaver", "Void"},
-            //Lunar LunarGolemBody 
+            //Lunar  
             new List<string> { "BrotherBody", "Mithrix", "BigBro", "Bro"},
             new List<string> { "LunarGolemBody", "MinigunnerLunarChimera", "LunarGolem"},
             new List<string> { "LunarWispBody", "WispLunarChimera", "LunarWisp"},
@@ -170,10 +170,8 @@ namespace DropInMultiplayer
         }
         #endregion
         #region Mod
-        //This is your constructor, use it wisely.
         DropInMultiplayer()
         {
-            //Subscribe to our awake event.
             awake += Load;
             start += FirstFrame;
         }
@@ -187,6 +185,13 @@ namespace DropInMultiplayer
             LogM("Drop-In Multiplayer Loaded!");
 #if DEBUG
             LogW("You're on a debug build. If you see this after downloading from the thunderstore, panic!");
+            //This is so we can connect to ourselves.
+            //Instructions:
+            //Step One: Assuming this line is in your codebase, start two instances of RoR2 (do this through the .exe directly)
+            //Step Two: Host a game with one instance of RoR2.
+            //Step Three: On the instance that isn't hosting, open up the console (ctrl + alt + tilde) and enter the command "connect localhost:7777"
+            //DO NOT MAKE A MISTAKE SPELLING THE COMMAND OR YOU WILL HAVE TO RESTART THE CLIENT INSTANCE!!
+            //Step Four: Test whatever you were going to test.
             On.RoR2.Networking.GameNetworkManager.OnClientConnect += (self, user, t) => { };
 #endif
         }
@@ -210,20 +215,18 @@ namespace DropInMultiplayer
 
         private void Hook() {
             On.RoR2.Run.SetupUserCharacterMaster += GiveItems;
-            On.RoR2.Console.RunCmd += Console_RunCmd; 
+            On.RoR2.Console.RunCmd += CheckforJoinAsRequest; 
             On.RoR2.NetworkUser.Start += GreetNewPlayer;
         }
 
-        private void Console_RunCmd(On.RoR2.Console.orig_RunCmd orig, RoR2.Console self, RoR2.Console.CmdSender sender, string concommandName, List<string> userArgs)
+        private void CheckforJoinAsRequest(On.RoR2.Console.orig_RunCmd orig, RoR2.Console self, RoR2.Console.CmdSender sender, string concommandName, List<string> userArgs)
         {
             orig(self, sender, concommandName, userArgs);
 
-            if (concommandName.Equals("say", StringComparison.OrdinalIgnoreCase))
-            {
+            if (concommandName.Equals("say", StringComparison.OrdinalIgnoreCase)) {
                 var userMsg = ArgsHelper.GetValue(userArgs, 0).ToLower();
                 var isRequest = userMsg.StartsWith("join_as");
-                if (isRequest)
-                {
+                if (isRequest) {
                     var argsRequest = userMsg.Split(' ').ToList();
                     string bodyString = ArgsHelper.GetValue(argsRequest, 1);
                     string userString = ArgsHelper.GetValue(argsRequest, 2);
@@ -236,8 +239,9 @@ namespace DropInMultiplayer
         private void GreetNewPlayer(On.RoR2.NetworkUser.orig_Start orig, NetworkUser self)
         {
             orig(self);
-            if (NetworkServer.active && Stage.instance != null) {
-                if (WelcomeMessage.Value) {
+            if (NetworkServer.active && Stage.instance != null) { //Make sure we're host.
+                if (WelcomeMessage.Value) { //If the host man has enabled this config option.
+                    //Now greet them if we passed the check.
                     AddChatMessage("Hello " + self.userName + "! Join the game by typing 'join_as [name]' (without the apostrophes of course) into the chat. Available survivors are Acrid, Artificer, Commando, Captain, Engineer, Huntress, Loader, Mercancy, MULT, and Rex!", 1f);
                 }
             }
@@ -289,13 +293,14 @@ namespace DropInMultiplayer
             //These are just to ensure that a null reference isn't thrown when we try to spawn our new player.
             if (!bodyPrefab) {
                 AddChatMessage("Couldn't find " + bodyString + ", " + player.userName + ". Options for join_as are Acrid, Artificer, Commando, Captain, Engineer, Huntress, Loader, Mercancy, MULT, and Rex!");
+                //The character the player is trying to spawn as doesn't exist. 
                 LogW("JoinAs :: Sent message to player informing them that what they requested to join as does not exist. Also bodyPrefab does not exist, returning!");
                 return;
             }
 
             if (NormalSurvivorsOnly.Value && !survivorList.Contains(bodyString)) {
-
                 AddChatMessage("You can only spawn as normal survivors");
+                //The character the player is trying to spawn as doesn't exist. 
                 LogW("JoinAs :: NormalSurvivorsOnly.Value is enabled and the object the player attempting to spawn is not a normal survivor. Sent a chat message informing them of this. Returning...");
                 return;
             }
@@ -341,7 +346,9 @@ namespace DropInMultiplayer
                 Transform spawnTransform = Stage.instance.GetPlayerSpawnTransform();
                 Vector3 posOffset = new Vector3(0, 1, 0);
 
+                //Get our CharacterBody.
                 CharacterBody body = backupMaster.SpawnBody(bodyPrefab, spawnTransform.position + posOffset, spawnTransform.rotation);
+                //Now handle the player's enterance animation with our new CharacterBody.
                 Run.instance.HandlePlayerFirstEntryAnimation(body, spawnTransform.position + posOffset, spawnTransform.rotation);
 
                 //Inform the chat that the person using join_as is spawning as what they requested.
