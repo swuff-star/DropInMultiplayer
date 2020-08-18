@@ -238,7 +238,7 @@ namespace DropInMultiplayer
             orig(self);
             if (NetworkServer.active && Stage.instance != null) {
                 if (WelcomeMessage.Value) {
-                    AddChatMessage("Hello " + self.userName + "! Join the game by typing 'join_as [name]' (without the apostrophes of course) into the chat. Available survivors are Commando, Huntress, Engi, Artificer, Mercancy, MULT, Rex, Loader, Acrid, and Captain!", 2f);
+                    AddChatMessage("Hello " + self.userName + "! Join the game by typing 'join_as [name]' (without the apostrophes of course) into the chat. Available survivors are Acrid, Artificer, Commando, Captain, Engineer, Huntress, Loader, Mercancy, MULT, and Rex!", 1f);
                 }
             }
         }
@@ -264,17 +264,17 @@ namespace DropInMultiplayer
         #region Methods
         private void JoinAs(NetworkUser user, string bodyString, string userString) {
             if (!SpawnAsEnabled.Value) {
-                Debug.Log("JoinAs :: SpawnAsEnabled.Value disabled. Returning...");
+                LogW("JoinAs :: SpawnAsEnabled.Value disabled. Returning...");
                 return;
             }
             if (HostOnlySpawnAs.Value) {
                 if (NetworkUser.readOnlyInstancesList[0].netId != user.netId) {
-                    Debug.Log("JoinAs :: HostOnlySpawnAs.Value disabled and the person using join_as isn't host. Returning!");
+                    LogW("JoinAs :: HostOnlySpawnAs.Value enabled and the person using join_as isn't host. Returning!");
                     return;
                 }
             }
 
-            //Finding the NetworkPlayer from the person who is using the Command.
+            //Finding the NetworkUser from the person who is using the command.
             NetworkUser player = GetNetUserFromString(userString);
 
             //https://docs.microsoft.com/en-us/dotnet/csharp/language-reference/operators/null-coalescing-operator
@@ -286,17 +286,17 @@ namespace DropInMultiplayer
             GameObject bodyPrefab = BodyCatalog.FindBodyPrefab(bodyString);
 
             #region Body Checks
-            //These
+            //These are just to ensure that a null reference isn't thrown when we try to spawn our new player.
             if (!bodyPrefab) {
-                AddChatMessage("Could not find " + bodyString + ", options for join_as are Commando, Huntress, Engi, Arti, Merc, Toolbot, Rex, Loader, and Acrid.");
-                Debug.Log("JoinAs :: bodyPrefab does not exist. Returning...");
+                AddChatMessage("Couldn't find " + bodyString + ", " + player.userName + ". Options for join_as are Acrid, Artificer, Commando, Captain, Engineer, Huntress, Loader, Mercancy, MULT, and Rex!");
+                LogW("JoinAs :: Sent message to player informing them that what they requested to join as does not exist. Also bodyPrefab does not exist, returning!");
                 return;
             }
 
             if (NormalSurvivorsOnly.Value && !survivorList.Contains(bodyString)) {
 
                 AddChatMessage("You can only spawn as normal survivors");
-                Debug.Log("JoinAs :: NormalSurvivorsOnly.Value is enabled and the object the player attempting to spawn is not a normal survivor. Returning...");
+                LogW("JoinAs :: NormalSurvivorsOnly.Value is enabled and the object the player attempting to spawn is not a normal survivor. Sent a chat message informing them of this. Returning...");
                 return;
             }
             #endregion
@@ -320,11 +320,11 @@ namespace DropInMultiplayer
                     }
                     else if (!hasBody)
                     {
-                        AddChatMessage("Sorry! You can't use join_as while dead.");
+                        AddChatMessage("Sorry " + player.userName + "! You can't use join_as while dead.");
                     }
                     else if (!AllowSpawnAsWhileAlive.Value && hasBody)
                     {
-                        AddChatMessage("Sorry! The host has made it so you can't use join_as while alive.");
+                        AddChatMessage("Sorry " + player.userName + "! The host has made it so you can't use join_as while alive.");
                     }
                     #endregion
                 }
@@ -431,7 +431,7 @@ namespace DropInMultiplayer
         #region Logging
         public static void LogF(object data) => logger.LogFatal(data);
         public static void LogE(object data) => logger.LogError(data);
-        public static void LogW(object data) => logger.LogDebug(data);
+        public static void LogW(object data) => logger.LogWarning(data);
         public static void LogM(object data) => logger.LogMessage(data);
         public static void LogI(object data) => logger.LogInfo(data);
         public static void LogD(object data) => logger.LogDebug(data);
