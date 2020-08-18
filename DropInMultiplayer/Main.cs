@@ -302,58 +302,56 @@ namespace DropInMultiplayer
             #endregion
 
 
-            //If the characterMaster exists.
-            if (characterMaster)
+            if (characterMaster) //If the characterMaster exists.
             {
-                //If the characterMaster is alive.
+                //We have to check if the CharacterMaster is alive for these next two checks.
                 bool hasBody = characterMaster.hasBody;
-
                 if (hasBody)
                 {
                     //If the characterMaster is alive, do stuff!
                     #region hasBody logic
-                    if (AllowSpawnAsWhileAlive.Value)
-                    {
+                    if (AllowSpawnAsWhileAlive.Value) { //If the host has enabled this option, respawn the person using join_as.
                         characterMaster.bodyPrefab = bodyPrefab;
                         characterMaster.Respawn(characterMaster.GetBody().transform.position, characterMaster.GetBody().transform.rotation);
                         AddChatMessage(player.userName + " is respawning as " + Language.GetString(bodyPrefab.GetComponent<CharacterBody>().baseNameToken) + "!");
                     }
-                    else if (!hasBody)
-                    {
+                    else if (!hasBody) { //The player is dead, don't let them do anything.
                         AddChatMessage("Sorry " + player.userName + "! You can't use join_as while dead.");
                     }
-                    else if (!AllowSpawnAsWhileAlive.Value && hasBody)
-                    {
+                    else if (!AllowSpawnAsWhileAlive.Value && hasBody) { //Host man has disabled this option, and the player is alive.
                         AddChatMessage("Sorry " + player.userName + "! The host has made it so you can't use join_as while alive.");
                     }
                     #endregion
                 }
             }
-            else
-            {   //Else, it doesn't have a characterMaster
+            else { //Else, the person doesn't have a CharacterMaster. So we're gonna have to make the game setup the CharacterMaster for us.
+                //Make sure the person can actually join. This allows SetupUserCharacterMaster (which is called in OnUserAdded) to work.
                 Run.instance.SetFieldValue("allowNewParticipants", true);
+                //Now that we've made sure the person can join, let's give them a CharacterMaster.
                 Run.instance.OnUserAdded(user);
 
-                var backup = user.master;
+                //Cache the master after we actually give them one.
+                CharacterMaster backupMaster = user.master;
 
-                backup.bodyPrefab = bodyPrefab;
+                //CharacterMasters aren't made for each survivor, they all use the same master.
+                //So we're gonna have to set the CharacterMaster's bodyPrefab to the prefab the person using join_as requested.
+                backupMaster.bodyPrefab = bodyPrefab;
                 
-                //Offset for players.
+                //Offset for players so they don't spawn in the ground.
                 Transform spawnTransform = Stage.instance.GetPlayerSpawnTransform();
-                Vector3 posOffset = new Vector3(0, 3, 0);
+                Vector3 posOffset = new Vector3(0, 1, 0);
 
-                CharacterBody body = backup.SpawnBody(bodyPrefab, spawnTransform.position + posOffset, spawnTransform.rotation);
+                CharacterBody body = backupMaster.SpawnBody(bodyPrefab, spawnTransform.position + posOffset, spawnTransform.rotation);
                 Run.instance.HandlePlayerFirstEntryAnimation(body, spawnTransform.position + posOffset, spawnTransform.rotation);
 
-                //Inform the chat that [Player] is spawning 
+                //Inform the chat that the person using join_as is spawning as what they requested.
                 AddChatMessage(player.userName + " is spawning as " + bodyString + "!");
 
-                if (!ImmediateSpawn.Value)
-                {
+                //This makes it so the player will spawn in the next stage.
+                if (!ImmediateSpawn.Value) {
                     Run.instance.SetFieldValue("allowNewParticipants", false);
                 }
             }
-
         }
         #region Helpers
         public string GetBodyNameFromString(string name) {
@@ -419,7 +417,6 @@ namespace DropInMultiplayer
         }
         private void Start()
         {
-            //Only use this if you need something that's created after RoR2's catalogs are loaded.
             Action start = DropInMultiplayer.start;
             if (start == null)
             {
