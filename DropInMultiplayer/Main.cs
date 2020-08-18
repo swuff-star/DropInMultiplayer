@@ -138,10 +138,18 @@ namespace DropInMultiplayer
             new List<string> { "TitanGoldBody", "TitanGold"},
             //Thing??
             new List<string> { "UrchinTurretBody", "UrchinTurret"},
-            //Scavs
+            //Scav
             new List<string> { "ScavBody", "Scav", "Scavenger"},
+            new List<string> { "ScavLunar1Body", "Kipkip", "Gentle"},
+            new List<string> { "ScavLunar2Body", "Wipwip", "Wild"},
+            new List<string> { "ScavLunar3Body", "Twiptwip", "Devotee"},
+            new List<string> { "ScavLunar4Body", "Guragura", "Lucky"},
             //thing 2
             new List<string> { "NullifierBody", "VoidReaver", "Reaver", "Void"},
+            //Lunar LunarGolemBody 
+            new List<string> { "BrotherBody", "Mithrix", "BigBro", "Bro"},
+            new List<string> { "LunarGolemBody", "MinigunnerLunarChimera", "LunarGolem"},
+            new List<string> { "LunarWispBody", "WispLunarChimera", "LunarWisp"},
 
         };
         #endregion
@@ -177,6 +185,10 @@ namespace DropInMultiplayer
             }
             DropIn();
             LogM("Drop-In Multiplayer Loaded!");
+#if DEBUG
+            LogW("You're on a debug build. If you see this after downloading from the thunderstore, panic!");
+            On.RoR2.Networking.GameNetworkManager.OnClientConnect += (self, user, t) => { };
+#endif
         }
         private void DropIn() {
             DefineConfig();
@@ -186,7 +198,7 @@ namespace DropInMultiplayer
             ImmediateSpawn = Config.Bind("Enable/Disable", "ImmediateSpawn", false, "Enables or disables immediate spawning as you join");
             NormalSurvivorsOnly = Config.Bind("Enable/Disable", "NormalSurvivorsOnly", true, "Changes whether or not join_as can only be used to turn into survivors");
             StartWithItems = Config.Bind("Enable/Disable", "StartWithItems", true, "Enables or disables giving players items if they join mid-game");
-            AllowSpawnAsWhileAlive = Config.Bind("Enable/Disable", "AllowJoinAsWhileAlive", true, "Enables or disables players using join_as while alive");
+            AllowSpawnAsWhileAlive = Config.Bind("Enable/Disable", "AllowJoinAsWhileAlive", false, "Enables or disables players using join_as while alive");
             SpawnAsEnabled = Config.Bind("Enable/Disable", "Join_As", true, "Enables or disables the join_as command");
             HostOnlySpawnAs = Config.Bind("Enable/Disable", "HostOnlyJoin_As", false, "Changes the join_as command to be host only");
             GiveLunarItems = Config.Bind("Enable/Disable", "GiveLunarItems", false, "Allows lunar items to be given to players, needs StartWithItems to be enabled!");
@@ -198,13 +210,14 @@ namespace DropInMultiplayer
 
         private void Hook() {
             On.RoR2.Run.SetupUserCharacterMaster += GiveItems;
-            On.RoR2.Console.RunCmd += Console_RunCmd; ;
+            On.RoR2.Console.RunCmd += Console_RunCmd; 
             On.RoR2.NetworkUser.Start += GreetNewPlayer;
         }
 
         private void Console_RunCmd(On.RoR2.Console.orig_RunCmd orig, RoR2.Console self, RoR2.Console.CmdSender sender, string concommandName, List<string> userArgs)
         {
             orig(self, sender, concommandName, userArgs);
+
             if (concommandName.Equals("say", StringComparison.OrdinalIgnoreCase))
             {
                 var userMsg = ArgsHelper.GetValue(userArgs, 0).ToLower();
@@ -215,7 +228,7 @@ namespace DropInMultiplayer
                     string bodyString = ArgsHelper.GetValue(argsRequest, 1);
                     string userString = ArgsHelper.GetValue(argsRequest, 2);
 
-                    SpawnAs(sender.networkUser, bodyString, userString);
+                    JoinAs(sender.networkUser, bodyString, userString);
                 }
             }
         }
@@ -225,7 +238,7 @@ namespace DropInMultiplayer
             orig(self);
             if (NetworkServer.active && Stage.instance != null) {
                 if (WelcomeMessage.Value) {
-                    AddChatMessage("Hello " + self.userName + "! Join the game by typing 'join_as [name]' (without the apostrophes of course) into the chat. Names are Commando, Huntress, Engi, Artificer, Merc, MULT, Rex, Loader, Acrid, and Captain!", 2f);
+                    AddChatMessage("Hello " + self.userName + "! Join the game by typing 'join_as [name]' (without the apostrophes of course) into the chat. Available survivors are Commando, Huntress, Engi, Artificer, Mercancy, MULT, Rex, Loader, Acrid, and Captain!", 2f);
                 }
             }
         }
@@ -241,24 +254,106 @@ namespace DropInMultiplayer
 
         private void PopulateSurvivorList() {
             survivorList = new List<string>();
-            foreach (var survivorDef in SurvivorCatalog.allSurvivorDefs) {
-                if (survivorDef.bodyPrefab) { 
-                survivorList.Add(survivorDef.bodyPrefab.name);
+            foreach (SurvivorDef def in SurvivorCatalog.allSurvivorDefs) {
+                if (def.bodyPrefab) { 
+                survivorList.Add(def.bodyPrefab.name);
                 }
             }
         }
         #endregion
         #region Methods
-        private void SpawnAs(NetworkUser user, string bodyString, string userString) {
+        private void JoinAs(NetworkUser user, string bodyString, string userString) {
             if (!SpawnAsEnabled.Value) {
-                LogD("SpawnAsEnabled.Value disabled.");
+                Debug.Log("JoinAs :: SpawnAsEnabled.Value disabled. Returning...");
                 return;
             }
             if (HostOnlySpawnAs.Value) {
                 if (NetworkUser.readOnlyInstancesList[0].netId != user.netId) {
+                    Debug.Log("JoinAs :: HostOnlySpawnAs.Value disabled and the person using join_as isn't host. Returning!");
                     return;
                 }
             }
+
+            //Finding the NetworkPlayer from the person who is using the Command.
+            NetworkUser player = GetNetUserFromString(userString);
+
+            //https://docs.microsoft.com/en-us/dotnet/csharp/language-reference/operators/null-coalescing-operator
+            player = player ?? user;
+            CharacterMaster characterMaster = player.master;
+
+            //Finding the body the player wants to spawn as.
+            bodyString = GetBodyNameFromString(bodyString);
+            GameObject bodyPrefab = BodyCatalog.FindBodyPrefab(bodyString);
+
+            #region Body Checks
+            //These
+            if (!bodyPrefab) {
+                AddChatMessage("Could not find " + bodyString + ", options for join_as are Commando, Huntress, Engi, Arti, Merc, Toolbot, Rex, Loader, and Acrid.");
+                Debug.Log("JoinAs :: bodyPrefab does not exist. Returning...");
+                return;
+            }
+
+            if (NormalSurvivorsOnly.Value && !survivorList.Contains(bodyString)) {
+
+                AddChatMessage("You can only spawn as normal survivors");
+                Debug.Log("JoinAs :: NormalSurvivorsOnly.Value is enabled and the object the player attempting to spawn is not a normal survivor. Returning...");
+                return;
+            }
+            #endregion
+
+
+            //If the characterMaster exists.
+            if (characterMaster)
+            {
+                //If the characterMaster is alive.
+                bool hasBody = characterMaster.hasBody;
+
+                if (hasBody)
+                {
+                    //If the characterMaster is alive, do stuff!
+                    #region hasBody logic
+                    if (AllowSpawnAsWhileAlive.Value)
+                    {
+                        characterMaster.bodyPrefab = bodyPrefab;
+                        characterMaster.Respawn(characterMaster.GetBody().transform.position, characterMaster.GetBody().transform.rotation);
+                        AddChatMessage(player.userName + " is respawning as " + Language.GetString(bodyPrefab.GetComponent<CharacterBody>().baseNameToken) + "!");
+                    }
+                    else if (!hasBody)
+                    {
+                        AddChatMessage("Sorry! You can't use join_as while dead.");
+                    }
+                    else if (!AllowSpawnAsWhileAlive.Value && hasBody)
+                    {
+                        AddChatMessage("Sorry! The host has made it so you can't use join_as while alive.");
+                    }
+                    #endregion
+                }
+            }
+            else
+            {   //Else, it doesn't have a characterMaster
+                Run.instance.SetFieldValue("allowNewParticipants", true);
+                Run.instance.OnUserAdded(user);
+
+                var backup = user.master;
+
+                backup.bodyPrefab = bodyPrefab;
+                
+                //Offset for players.
+                Transform spawnTransform = Stage.instance.GetPlayerSpawnTransform();
+                Vector3 posOffset = new Vector3(0, 3, 0);
+
+                CharacterBody body = backup.SpawnBody(bodyPrefab, spawnTransform.position + posOffset, spawnTransform.rotation);
+                Run.instance.HandlePlayerFirstEntryAnimation(body, spawnTransform.position + posOffset, spawnTransform.rotation);
+
+                //Inform the chat that [Player] is spawning 
+                AddChatMessage(player.userName + " is spawning as " + bodyString + "!");
+
+                if (!ImmediateSpawn.Value)
+                {
+                    Run.instance.SetFieldValue("allowNewParticipants", false);
+                }
+            }
+
         }
         #region Helpers
         public string GetBodyNameFromString(string name) {
@@ -271,7 +366,35 @@ namespace DropInMultiplayer
             }
             return name;
         }
-        #endregion
+        private NetworkUser GetNetUserFromString(string playerString)
+        {
+            int result = 0;
+            if (playerString != "")
+            {
+                if (int.TryParse(playerString, out result))
+                {
+                    if (result < NetworkUser.readOnlyInstancesList.Count && result >= 0)
+                    {
+
+                        return NetworkUser.readOnlyInstancesList[result];
+                    }
+                    LogE("Specified player index does not exist");
+                    return null;
+                }
+                else
+                {
+                    foreach (NetworkUser n in NetworkUser.readOnlyInstancesList)
+                    {
+                        if (n.userName.Equals(playerString, StringComparison.CurrentCultureIgnoreCase))
+                        {
+                            return n;
+                        }
+                    }
+                    return null;
+                }
+            }
+            return null;
+        }
         #endregion
         #region Chat Messages
         private void AddChatMessage(string message, float time = 0.1f) {
@@ -282,6 +405,7 @@ namespace DropInMultiplayer
             var chatMessage = new Chat.SimpleChatMessage { baseToken = message };
             Chat.SendBroadcastChat(chatMessage);
         }
+        #endregion
         #endregion
         #region Basic
         private void Awake()
